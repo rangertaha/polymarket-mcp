@@ -1,0 +1,50 @@
+# Binaries & build output
+/polymarket-mcp
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Test, coverage & profiling output
+*.out
+*.cover
+coverage.*
+*.prof
+*.cpu
+*.mem
+
+# Go workspace files
+go.work
+go.work.sum
+
+
+# Local env files (may contain credentials)
+.env
+.env.*
+!.env.example
+
+# Caches
+.cache/
+
+# Editor / IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local Claude settings, but keep the project's shared settings & slash commands
+/.claude
+!/.claude/commands/
+!/.claude/settings.json
+.claude/settings.local.json
