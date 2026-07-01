@@ -13,19 +13,35 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // Environment variable names recognised by the server.
 const (
-	EnvBaseURL  = "POLYMARKET_BASE_URL" // override the Gamma API base URL
-	EnvToolsets = "POLYMARKET_TOOLSETS" // comma-separated toolset names, or "all"
-	EnvReadOnly = "POLYMARKET_READONLY" // "true" disables all write tools
+	EnvBaseURL       = "POLYMARKET_BASE_URL"       // override the Gamma API base URL
+	EnvToolsets      = "POLYMARKET_TOOLSETS"       // comma-separated toolset names, or "all"
+	EnvReadOnly      = "POLYMARKET_READONLY"       // "true" disables all write tools
+	EnvPrivateKey    = "POLYMARKET_PRIVATE_KEY"    // wallet private key; enables the trading toolset
+	EnvCLOBBaseURL   = "POLYMARKET_CLOB_BASE_URL"  // override the CLOB trading API base URL
+	EnvChainID       = "POLYMARKET_CHAIN_ID"       // EVM chain ID for order signing (default: Polygon)
+	EnvFunderAddress = "POLYMARKET_FUNDER_ADDRESS" // maker/funder address, if different from the signing wallet
+	EnvSignatureType = "POLYMARKET_SIGNATURE_TYPE" // order signature type: 0=EOA, 1=proxy, 2=Gnosis Safe
 )
 
 // DefaultBaseURL is the Polymarket Gamma API base used when POLYMARKET_BASE_URL
 // is unset.
 const DefaultBaseURL = "https://gamma-api.polymarket.com"
+
+// DefaultCLOBBaseURL is the Polymarket CLOB trading API base used when
+// POLYMARKET_CLOB_BASE_URL is unset.
+const DefaultCLOBBaseURL = "https://clob.polymarket.com"
+
+// DefaultChainID is the Polygon mainnet chain ID used when POLYMARKET_CHAIN_ID
+// is unset.
+const DefaultChainID = 137
 
 // Config holds validated server configuration.
 type Config struct {
@@ -35,7 +51,27 @@ type Config struct {
 	Toolsets []string
 	// ReadOnly, when true, suppresses mutating tools at registration time.
 	ReadOnly bool
+
+	// PrivateKey is a hex-encoded secp256k1 wallet private key used to sign
+	// CLOB orders and derive trading API credentials. Empty disables trading:
+	// the server falls back to the public, read-only Gamma data API only.
+	PrivateKey string
+	// CLOBBaseURL is the CLOB trading REST base URL (never has a trailing slash).
+	CLOBBaseURL string
+	// ChainID is the EVM chain ID used for EIP-712 order signing.
+	ChainID int64
+	// FunderAddress is the maker/funder address holding trading funds. Empty
+	// means the wallet derived from PrivateKey funds its own orders directly.
+	FunderAddress string
+	// SignatureType selects the order signature scheme (0=EOA, 1=proxy wallet,
+	// 2=Gnosis Safe), matching Polymarket's CTF Exchange signature types.
+	SignatureType int
 }
+
+// TradingEnabled reports whether trading credentials were supplied. When
+// false, the trading toolset registers no tools and the server serves only
+// the public Gamma data API.
+func (c *Config) TradingEnabled() bool { return c.PrivateKey != "" }
 
 // AllToolsets reports whether every toolset should be enabled.
 func (c *Config) AllToolsets() bool {
@@ -66,17 +102,58 @@ func (c *Config) ToolsetEnabled(name string) bool {
 // Load reads configuration from the process environment and validates it.
 func Load() (*Config, error) {
 	cfg := &Config{
-		BaseURL:  strings.TrimRight(strings.TrimSpace(os.Getenv(EnvBaseURL)), "/"),
-		Toolsets: splitList(os.Getenv(EnvToolsets)),
-		ReadOnly: isTruthy(os.Getenv(EnvReadOnly)),
+		BaseURL:       strings.TrimRight(strings.TrimSpace(os.Getenv(EnvBaseURL)), "/"),
+		Toolsets:      splitList(os.Getenv(EnvToolsets)),
+		ReadOnly:      isTruthy(os.Getenv(EnvReadOnly)),
+		PrivateKey:    strings.TrimPrefix(strings.TrimSpace(os.Getenv(EnvPrivateKey)), "0x"),
+		CLOBBaseURL:   strings.TrimRight(strings.TrimSpace(os.Getenv(EnvCLOBBaseURL)), "/"),
+		FunderAddress: strings.TrimSpace(os.Getenv(EnvFunderAddress)),
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = DefaultBaseURL
+	}
+	if cfg.CLOBBaseURL == "" {
+		cfg.CLOBBaseURL = DefaultCLOBBaseURL
 	}
 
 	var errs []error
 	if u, err := url.Parse(cfg.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		errs = append(errs, fmt.Errorf("%s is not a valid URL: %q", EnvBaseURL, cfg.BaseURL))
+	}
+
+	cfg.ChainID = DefaultChainID
+
+	// Trading-only fields are validated only when a private key is actually
+	// supplied. Commands that never touch the CLOB (e.g. `polymarket test`,
+	// or the MCP server with no wallet configured) must not be blocked by a
+	// malformed POLYMARKET_CHAIN_ID/POLYMARKET_CLOB_BASE_URL/etc. that will
+	// never be used.
+	if cfg.PrivateKey != "" {
+		if u, err := url.Parse(cfg.CLOBBaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+			errs = append(errs, fmt.Errorf("%s is not a valid URL: %q", EnvCLOBBaseURL, cfg.CLOBBaseURL))
+		}
+
+		if v := strings.TrimSpace(os.Getenv(EnvChainID)); v != "" {
+			id, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s is not a valid integer: %q", EnvChainID, v))
+			} else {
+				cfg.ChainID = id
+			}
+		}
+
+		if v := strings.TrimSpace(os.Getenv(EnvSignatureType)); v != "" {
+			st, err := strconv.Atoi(v)
+			if err != nil || st < 0 || st > 2 {
+				errs = append(errs, fmt.Errorf("%s must be 0, 1, or 2: %q", EnvSignatureType, v))
+			} else {
+				cfg.SignatureType = st
+			}
+		}
+
+		if _, err := crypto.HexToECDSA(cfg.PrivateKey); err != nil {
+			errs = append(errs, fmt.Errorf("%s is not a valid private key: %w", EnvPrivateKey, err))
+		}
 	}
 
 	if len(errs) > 0 {

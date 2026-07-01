@@ -30,7 +30,8 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Version-less names so `releases/latest/download/<asset>` links always resolve.
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     # Windows users expect zips.
     format_overrides:
       - goos: windows

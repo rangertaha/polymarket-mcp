@@ -6,12 +6,15 @@
 package app
 
 import (
+	"fmt"
 	"log"
 	"os"
 
+	"github.com/rangertaha/polymarket-mcp/internal/clob"
 	"github.com/rangertaha/polymarket-mcp/internal/config"
 	"github.com/rangertaha/polymarket-mcp/internal/polymarket"
 	"github.com/rangertaha/polymarket-mcp/internal/polymarket/markets"
+	"github.com/rangertaha/polymarket-mcp/internal/polymarket/trading"
 	"github.com/rangertaha/polymarket-mcp/internal/prompts"
 	"github.com/rangertaha/polymarket-mcp/internal/server"
 )
@@ -23,6 +26,19 @@ func Assemble(cfg *config.Config, version string) (*server.Server, func(), error
 	clients, err := polymarket.NewClients(cfg.BaseURL)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Trading is opt-in: without a wallet private key the server keeps
+	// serving the public Gamma data API and simply registers no trading
+	// tools (see trading.Register).
+	if cfg.TradingEnabled() {
+		wallet, err := clob.NewWallet(cfg.PrivateKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("loading trading wallet: %w", err)
+		}
+		if err := clients.EnableTrading(wallet, cfg.CLOBBaseURL, cfg.ChainID, cfg.FunderAddress, cfg.SignatureType); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	srv := server.New("polymarket-mcp", version, cfg.ReadOnly)
@@ -46,5 +62,6 @@ func Assemble(cfg *config.Config, version string) (*server.Server, func(), error
 func toolsets() []server.Toolset {
 	return []server.Toolset{
 		{Name: markets.Name, Register: markets.Register},
+		{Name: trading.Name, Register: trading.Register},
 	}
 }

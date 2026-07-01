@@ -46,6 +46,11 @@ type Option func(*Client)
 // WithHTTPClient sets a custom *http.Client (e.g. for testing or proxies).
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
+// HTTPClient returns the underlying *http.Client, so code that must build its
+// own requests outside Do (e.g. a one-off auth bootstrap call) can share the
+// same transport/timeout/proxy configuration.
+func (c *Client) HTTPClient() *http.Client { return c.http }
+
 // WithUserAgent sets the User-Agent header sent on every request.
 func WithUserAgent(ua string) Option { return func(c *Client) { c.userAgent = ua } }
 

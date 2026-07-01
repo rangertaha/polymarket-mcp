@@ -37,3 +37,9 @@ func (c *Client) Delete(ctx context.Context, path string, query url.Values, out 
 	_, err := c.Do(ctx, Request{Method: http.MethodDelete, Path: path, Query: query, Out: out})
 	return err
 }
+
+// DeleteJSON performs a DELETE request with a JSON body and decodes the response.
+func (c *Client) DeleteJSON(ctx context.Context, path string, query url.Values, body, out any) error {
+	_, err := c.Do(ctx, Request{Method: http.MethodDelete, Path: path, Query: query, Body: body, Out: out})
+	return err
+}
