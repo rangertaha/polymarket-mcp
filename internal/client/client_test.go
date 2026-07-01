@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -182,8 +183,8 @@ func TestDoReturnsAPIErrorOnNon2xx(t *testing.T) {
 			if err == nil {
 				t.Fatal("GetJSON() expected error, got nil")
 			}
-			apiErr, ok := err.(*APIError)
-			if !ok {
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
 				t.Fatalf("error type = %T, want *APIError", err)
 			}
 			if apiErr.StatusCode != http.StatusBadRequest {

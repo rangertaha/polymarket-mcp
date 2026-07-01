@@ -4,6 +4,7 @@ package trading
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -76,13 +77,13 @@ func TestRequireCLOBWithoutWallet(t *testing.T) {
 	svc := &service{c: &polymarket.Clients{}}
 	ctx := t.Context()
 
-	if _, err := svc.GetOrderBook(ctx, "1"); err != errNotConfigured {
+	if _, err := svc.GetOrderBook(ctx, "1"); !errors.Is(err, errNotConfigured) {
 		t.Errorf("GetOrderBook() error = %v, want errNotConfigured", err)
 	}
-	if _, err := svc.GetBalance(ctx, "COLLATERAL", ""); err != errNotConfigured {
+	if _, err := svc.GetBalance(ctx, "COLLATERAL", ""); !errors.Is(err, errNotConfigured) {
 		t.Errorf("GetBalance() error = %v, want errNotConfigured", err)
 	}
-	if _, err := svc.PlaceOrder(ctx, "1", clob.Buy, 0.5, 10, ""); err != errNotConfigured {
+	if _, err := svc.PlaceOrder(ctx, "1", clob.Buy, 0.5, 10, ""); !errors.Is(err, errNotConfigured) {
 		t.Errorf("PlaceOrder() error = %v, want errNotConfigured", err)
 	}
 }

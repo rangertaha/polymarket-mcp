@@ -11,7 +11,7 @@ All configuration is read from the environment. The Gamma data API is public.
 ## Trading (CLOB API)
 
 > **Trading moves real funds on Polygon mainnet.** See the disclaimer in the
-> [README](../README.md) before configuring any of this.
+> [README](https://github.com/rangertaha/polymarket-mcp#readme) before configuring any of this.
 
 The `trading` toolset (place/cancel orders, balances, open orders, trade
 history, order book/price data) is disabled entirely unless
