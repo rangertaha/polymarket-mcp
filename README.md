@@ -1,7 +1,7 @@
 # polymarket-mcp
 
 [![CI](https://github.com/rangertaha/polymarket-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/rangertaha/polymarket-mcp/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-92.5%25-brightgreen)](https://github.com/rangertaha/polymarket-mcp)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/rangertaha/polymarket-mcp/main/.github/badges/coverage.json)](https://github.com/rangertaha/polymarket-mcp/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/rangertaha/polymarket-mcp.svg)](https://pkg.go.dev/github.com/rangertaha/polymarket-mcp)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/rangertaha/polymarket-mcp)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

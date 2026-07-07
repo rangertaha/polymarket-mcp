@@ -13,6 +13,7 @@
 *.out
 *.cover
 coverage.*
+!.github/badges/coverage.json
 *.prof
 *.cpu
 *.mem
