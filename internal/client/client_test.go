@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -125,6 +127,81 @@ func TestPostJSONSendsBody(t *testing.T) {
 	}
 }
 
+func TestPutJSONSendsBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding request body: %v", err)
+		}
+		if body["name"] != "gizmo" {
+			t.Errorf("body = %v, want name=gizmo", body)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.PutJSON(context.Background(), "/widgets/1", nil, map[string]string{"name": "gizmo"}, nil); err != nil {
+		t.Fatalf("PutJSON() error = %v", err)
+	}
+}
+
+func TestPatchJSONSendsBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %s, want PATCH", r.Method)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding request body: %v", err)
+		}
+		if body["name"] != "gizmo" {
+			t.Errorf("body = %v, want name=gizmo", body)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.PatchJSON(context.Background(), "/widgets/1", nil, map[string]string{"name": "gizmo"}, nil); err != nil {
+		t.Fatalf("PatchJSON() error = %v", err)
+	}
+}
+
+func TestDeleteSendsNoBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Errorf("body = %q, want empty", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.Delete(context.Background(), "/widgets/1", nil, nil); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
 func TestDeleteJSONSendsBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
@@ -220,6 +297,163 @@ func TestRawBodyCapturesNonJSONResponse(t *testing.T) {
 	}
 }
 
+// TestDoReturnsErrorOnTruncatedBody covers Do's io.ReadAll error branch: the
+// server declares more bytes (Content-Length) than it actually sends before
+// closing the connection, so reading the body must fail with an unexpected
+// EOF rather than silently returning a partial result.
+func TestDoReturnsErrorOnTruncatedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("ResponseWriter does not support hijacking")
+		}
+		conn, buf, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("Hijack() error = %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Type: application/json\r\n\r\n{\"partial\":")
+		_ = buf.Flush()
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.GetJSON(context.Background(), "/", nil, nil); err == nil {
+		t.Fatal("GetJSON() expected error for a truncated response body, got nil")
+	}
+}
+
+func TestWithHeaderAppliesToEveryRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-Version"); got != "2024-01-01" {
+			t.Errorf("X-API-Version = %q, want 2024-01-01", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil, WithHeader("X-API-Version", "2024-01-01"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.GetJSON(context.Background(), "/", nil, nil); err != nil {
+		t.Fatalf("GetJSON() error = %v", err)
+	}
+}
+
+func TestWithHeaderCanBeOverriddenPerRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-Version"); got != "override" {
+			t.Errorf("X-API-Version = %q, want override", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil, WithHeader("X-API-Version", "2024-01-01"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{
+		Method: http.MethodGet,
+		Path:   "/",
+		Header: http.Header{"X-API-Version": {"override"}},
+	})
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+}
+
+func TestDoWithReaderBodyDefaultsContentType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/octet-stream" {
+			t.Errorf("Content-Type = %q, want application/octet-stream", got)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		if string(body) != "raw bytes" {
+			t.Errorf("body = %q, want %q", body, "raw bytes")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{
+		Method: http.MethodPost,
+		Path:   "/",
+		Body:   strings.NewReader("raw bytes"),
+	})
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+}
+
+func TestDoRejectsUnmarshalableBody(t *testing.T) {
+	c, err := New("https://example.com", nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{
+		Method: http.MethodPost,
+		Path:   "/",
+		Body:   make(chan int), // channels cannot be JSON-marshaled
+	})
+	if err == nil {
+		t.Fatal("Do() expected error for an unmarshalable body, got nil")
+	}
+}
+
+func TestDoRejectsInvalidMethod(t *testing.T) {
+	c, err := New("https://example.com", nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{Method: "IN VALID", Path: "/"})
+	if err == nil {
+		t.Fatal("Do() expected error for an invalid HTTP method, got nil")
+	}
+}
+
+func TestDoReturnsErrorOnTransportFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	baseURL := srv.URL
+	srv.Close() // nothing is listening at baseURL anymore
+
+	c, err := New(baseURL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := c.GetJSON(context.Background(), "/", nil, nil); err == nil {
+		t.Fatal("GetJSON() expected error against an unreachable server, got nil")
+	}
+}
+
+func TestDoReturnsDecodeErrorOnMalformedJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	var out struct{ ID string }
+	if err := c.GetJSON(context.Background(), "/", nil, &out); err == nil {
+		t.Fatal("GetJSON() expected decode error for malformed JSON, got nil")
+	}
+}
+
 func TestHTTPClientAccessorReturnsConfiguredClient(t *testing.T) {
 	custom := &http.Client{}
 	c, err := New("https://example.com", nil, WithHTTPClient(custom))
@@ -252,5 +486,51 @@ func TestJoinPath(t *testing.T) {
 		if got := joinPath(c.base, c.rel); got != c.want {
 			t.Errorf("joinPath(%q, %q) = %q, want %q", c.base, c.rel, got, c.want)
 		}
+	}
+}
+
+// TestDoDoesNotDoubleEncodePreEscapedPathSegment guards against a caller
+// pre-escaping a dynamic path segment (e.g. markets.GetMarket calling
+// url.PathEscape on an ID before building the path). Setting only u.Path
+// from an already-escaped string causes url.URL to re-escape it when the
+// request is sent — a literal "%2F" becomes "%252F" — so the server sees
+// mangled input for what should have been a single literal path segment.
+func TestDoDoesNotDoubleEncodePreEscapedPathSegment(t *testing.T) {
+	var gotPath, gotRawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotRawQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	path := "/markets/" + url.PathEscape("123/456")
+	if _, err := c.Do(context.Background(), Request{Method: http.MethodGet, Path: path}); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	if gotPath != "/markets/123%2F456" {
+		t.Errorf("server-observed path = %q, want /markets/123%%2F456 (single-escaped, not double-escaped)", gotPath)
+	}
+	if gotRawQuery != "" {
+		t.Errorf("RawQuery = %q, want empty", gotRawQuery)
+	}
+}
+
+// TestDoRejectsMalformedPercentEncoding covers buildRequest's PathUnescape
+// error branch: a lone "%" not followed by two hex digits is invalid
+// percent-encoding.
+func TestDoRejectsMalformedPercentEncoding(t *testing.T) {
+	c, err := New("https://example.com", nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{Method: http.MethodGet, Path: "/bad%zzpath"})
+	if err == nil {
+		t.Fatal("Do() expected error for malformed percent-encoding in path, got nil")
 	}
 }

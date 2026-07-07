@@ -131,8 +131,8 @@ func BuildAndSign(w *Wallet, chainID int64, maker string, signatureType int, arg
 		return nil, fmt.Errorf("size must be positive, got %v", args.Size)
 	}
 	tokenID, ok := new(big.Int).SetString(args.TokenID, 10)
-	if !ok {
-		return nil, fmt.Errorf("invalid tokenId %q: not a decimal integer", args.TokenID)
+	if !ok || tokenID.Sign() < 0 {
+		return nil, fmt.Errorf("invalid tokenId %q: not a non-negative decimal integer", args.TokenID)
 	}
 
 	tokenAmount := roundToAtomicUnits(new(big.Float).Mul(big.NewFloat(args.Size), big.NewFloat(baseUnitScale)))

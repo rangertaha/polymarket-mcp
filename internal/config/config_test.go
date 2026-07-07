@@ -65,6 +65,7 @@ func TestLoadIgnoresMalformedTradingFieldsWithoutKey(t *testing.T) {
 		{"bad chain id", map[string]string{EnvChainID: "not-a-number"}},
 		{"bad clob base url", map[string]string{EnvCLOBBaseURL: "not a url"}},
 		{"bad signature type", map[string]string{EnvSignatureType: "99"}},
+		{"bad funder address", map[string]string{EnvFunderAddress: "not-an-address"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -92,6 +93,7 @@ func TestLoadValidatesTradingFieldsWithKey(t *testing.T) {
 		{"bad clob base url", map[string]string{EnvPrivateKey: testPrivateKey, EnvCLOBBaseURL: "not a url"}},
 		{"signature type too high", map[string]string{EnvPrivateKey: testPrivateKey, EnvSignatureType: "3"}},
 		{"signature type negative", map[string]string{EnvPrivateKey: testPrivateKey, EnvSignatureType: "-1"}},
+		{"bad funder address", map[string]string{EnvPrivateKey: testPrivateKey, EnvFunderAddress: "not-an-address"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -131,6 +133,23 @@ func TestLoadTradingEnabled(t *testing.T) {
 	}
 	if cfg.FunderAddress != "0x1234567890123456789012345678901234567890" {
 		t.Errorf("FunderAddress = %q, unexpected", cfg.FunderAddress)
+	}
+}
+
+// TestLoadAcceptsUppercaseHexPrefix guards a case-sensitive prefix strip
+// missing "0X": crypto.HexToECDSA rejects any "0x"/"0X" prefix, so a key
+// given with the uppercase form must still validate rather than being
+// misreported as an invalid private key.
+func TestLoadAcceptsUppercaseHexPrefix(t *testing.T) {
+	clearEnv(t)
+	t.Setenv(EnvPrivateKey, "0X"+testPrivateKey)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PrivateKey != testPrivateKey {
+		t.Errorf("PrivateKey = %q, want %q (leading 0X stripped)", cfg.PrivateKey, testPrivateKey)
 	}
 }
 

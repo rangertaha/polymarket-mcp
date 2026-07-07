@@ -158,7 +158,19 @@ func (r *RawBody) String() string { return string(r.Bytes) }
 // buildRequest assembles an *http.Request from a Request.
 func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, error) {
 	u := *c.base
-	u.Path = joinPath(c.base.Path, req.Path)
+	// req.Path may already contain percent-escaped segments (e.g. a caller
+	// escaping a dynamic path element via url.PathEscape). Setting only
+	// u.Path would have url.URL re-escape it when the request is sent,
+	// double-encoding any such segment (e.g. "%2F" becoming "%252F"). Setting
+	// both Path (decoded) and RawPath (as given) to matching values tells
+	// url.URL the escaping is already correct, so it's used as-is.
+	rawPath := joinPath(c.base.EscapedPath(), req.Path)
+	decodedPath, err := url.PathUnescape(rawPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path %q: %w", req.Path, err)
+	}
+	u.Path = decodedPath
+	u.RawPath = rawPath
 
 	if len(req.Query) > 0 {
 		q := url.Values{}

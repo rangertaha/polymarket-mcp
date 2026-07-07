@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -37,6 +38,15 @@ func (s *Server) AddPrompt(name, description string, args []PromptArg, render fu
 		var values map[string]string
 		if req != nil && req.Params != nil {
 			values = req.Params.Arguments
+		}
+		// The MCP SDK declares PromptArgument.Required for clients' benefit
+		// but never enforces it itself, so a missing required argument would
+		// otherwise render silently (e.g. as an empty string interpolated
+		// into the prompt text) instead of failing clearly.
+		for _, a := range args {
+			if a.Required && values[a.Name] == "" {
+				return nil, fmt.Errorf("missing required argument %q", a.Name)
+			}
 		}
 		return &mcp.GetPromptResult{
 			Description: description,

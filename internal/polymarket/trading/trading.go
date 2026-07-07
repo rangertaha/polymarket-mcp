@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rangertaha/polymarket-mcp/internal/clob"
@@ -195,10 +196,20 @@ func (s *service) GetMidpoint(ctx context.Context, tokenID string) (string, erro
 
 // PlaceOrder builds, signs, and submits a limit order. Price is looked up
 // against the market's tick size and neg-risk exchange automatically via
-// GetOrderBook before signing.
-func (s *service) PlaceOrder(ctx context.Context, tokenID string, side clob.Side, price, size float64, orderType string) (*PlaceOrderResult, error) {
+// GetOrderBook before signing. expiration is the unix-seconds time a GTD
+// (good-til-date) order expires; it is required when orderType is GTD and
+// ignored (the signed order carries no expiration) for every other type.
+func (s *service) PlaceOrder(ctx context.Context, tokenID string, side clob.Side, price, size float64, orderType string, expiration int64) (*PlaceOrderResult, error) {
 	if err := s.requireAuth(ctx); err != nil {
 		return nil, err
+	}
+
+	if orderType == "" {
+		orderType = "GTC"
+	}
+	orderType = strings.ToUpper(orderType)
+	if orderType == "GTD" && expiration <= time.Now().Unix() {
+		return nil, fmt.Errorf("orderType GTD requires expiration to be a future unix timestamp (seconds), got %d", expiration)
 	}
 
 	book, err := s.GetOrderBook(ctx, tokenID)
@@ -219,14 +230,12 @@ func (s *service) PlaceOrder(ctx context.Context, tokenID string, side clob.Side
 		Side:            side,
 		TickSize:        tickSize,
 		ExchangeAddress: exchange,
+		Expiration:      expiration,
 	}, time.Now().UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	if orderType == "" {
-		orderType = "GTC"
-	}
 	body := map[string]any{
 		"order":     signed,
 		"owner":     s.c.Auth.APIKey(),

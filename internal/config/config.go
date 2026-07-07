@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -105,7 +106,7 @@ func Load() (*Config, error) {
 		BaseURL:       strings.TrimRight(strings.TrimSpace(os.Getenv(EnvBaseURL)), "/"),
 		Toolsets:      splitList(os.Getenv(EnvToolsets)),
 		ReadOnly:      isTruthy(os.Getenv(EnvReadOnly)),
-		PrivateKey:    strings.TrimPrefix(strings.TrimSpace(os.Getenv(EnvPrivateKey)), "0x"),
+		PrivateKey:    stripHexPrefix(strings.TrimSpace(os.Getenv(EnvPrivateKey))),
 		CLOBBaseURL:   strings.TrimRight(strings.TrimSpace(os.Getenv(EnvCLOBBaseURL)), "/"),
 		FunderAddress: strings.TrimSpace(os.Getenv(EnvFunderAddress)),
 	}
@@ -154,6 +155,10 @@ func Load() (*Config, error) {
 		if _, err := crypto.HexToECDSA(cfg.PrivateKey); err != nil {
 			errs = append(errs, fmt.Errorf("%s is not a valid private key: %w", EnvPrivateKey, err))
 		}
+
+		if cfg.FunderAddress != "" && !common.IsHexAddress(cfg.FunderAddress) {
+			errs = append(errs, fmt.Errorf("%s is not a valid address: %q", EnvFunderAddress, cfg.FunderAddress))
+		}
 	}
 
 	if len(errs) > 0 {
@@ -186,4 +191,14 @@ func isTruthy(v string) bool {
 	default:
 		return false
 	}
+}
+
+// stripHexPrefix removes a leading "0x"/"0X" from a hex-encoded value.
+// crypto.HexToECDSA rejects any such prefix (case-sensitively matching would
+// miss "0X", causing a valid key to be misreported as invalid).
+func stripHexPrefix(s string) string {
+	if len(s) >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
+		return s[2:]
+	}
+	return s
 }

@@ -121,11 +121,12 @@ type ListTradesInput struct {
 
 // PlaceOrderInput describes a limit order to sign and submit.
 type PlaceOrderInput struct {
-	TokenID   string  `json:"tokenId" jsonschema:"ERC-1155 outcome token ID (decimal string) to trade"`
-	Side      string  `json:"side" jsonschema:"BUY or SELL"`
-	Price     float64 `json:"price" jsonschema:"limit price as a probability in (0,1), e.g. 0.45"`
-	Size      float64 `json:"size" jsonschema:"outcome token quantity to buy or sell"`
-	OrderType string  `json:"orderType,omitempty" jsonschema:"GTC (default, good-til-cancelled), FOK, GTD, or FAK (optional)"`
+	TokenID    string  `json:"tokenId" jsonschema:"ERC-1155 outcome token ID (decimal string) to trade"`
+	Side       string  `json:"side" jsonschema:"BUY or SELL"`
+	Price      float64 `json:"price" jsonschema:"limit price as a probability in (0,1), e.g. 0.45"`
+	Size       float64 `json:"size" jsonschema:"outcome token quantity to buy or sell"`
+	OrderType  string  `json:"orderType,omitempty" jsonschema:"GTC (default, good-til-cancelled), FOK, GTD, or FAK (optional)"`
+	Expiration int64   `json:"expiration,omitempty" jsonschema:"unix timestamp (seconds) the order expires; required when orderType is GTD, ignored otherwise (optional)"`
 }
 
 // CancelOrderInput identifies a single order to cancel.
@@ -180,7 +181,7 @@ func (s *service) listTrades(ctx context.Context, _ *mcp.CallToolRequest, in Lis
 }
 
 func (s *service) placeOrder(ctx context.Context, _ *mcp.CallToolRequest, in PlaceOrderInput) (*mcp.CallToolResult, *PlaceOrderResult, error) {
-	out, err := s.PlaceOrder(ctx, in.TokenID, clob.Side(in.Side), in.Price, in.Size, in.OrderType)
+	out, err := s.PlaceOrder(ctx, in.TokenID, clob.Side(in.Side), in.Price, in.Size, in.OrderType, in.Expiration)
 	return nil, out, err
 }
 

@@ -75,6 +75,33 @@ func TestListMarketsOmitsUnsetFilters(t *testing.T) {
 	}
 }
 
+func TestListMarketsSetsClosedFilter(t *testing.T) {
+	var gotQuery url.Values
+	svc := newTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+
+	closed := true
+	if _, err := svc.ListMarkets(t.Context(), nil, &closed, 0, 0); err != nil {
+		t.Fatalf("ListMarkets() error = %v", err)
+	}
+	if gotQuery.Get("closed") != "true" {
+		t.Errorf("closed query = %q, want true", gotQuery.Get("closed"))
+	}
+}
+
+func TestListMarketsPropagatesAPIError(t *testing.T) {
+	svc := newTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	if _, err := svc.ListMarkets(t.Context(), nil, nil, 0, 0); err == nil {
+		t.Fatal("ListMarkets() expected error, got nil")
+	}
+}
+
 func TestGetMarket(t *testing.T) {
 	svc := newTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/markets/42" {

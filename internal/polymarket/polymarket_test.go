@@ -30,6 +30,21 @@ func TestNewClientsRejectsInvalidBaseURL(t *testing.T) {
 	}
 }
 
+func TestEnableTradingRejectsInvalidCLOBBaseURL(t *testing.T) {
+	c, err := NewClients("https://gamma-api.polymarket.com")
+	if err != nil {
+		t.Fatalf("NewClients() error = %v", err)
+	}
+	w, err := clob.NewWallet(testPrivateKey)
+	if err != nil {
+		t.Fatalf("NewWallet() error = %v", err)
+	}
+
+	if err := c.EnableTrading(w, "://not-a-url", 137, "", 0); err == nil {
+		t.Fatal("EnableTrading() expected error for invalid CLOB base URL, got nil")
+	}
+}
+
 func TestEnableTradingWiresClients(t *testing.T) {
 	c, err := NewClients("https://gamma-api.polymarket.com")
 	if err != nil {

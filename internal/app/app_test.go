@@ -98,11 +98,40 @@ func TestAssembleRespectsToolsetFilterEvenWithTradingConfigured(t *testing.T) {
 	}
 }
 
+// TestAssembleRejectsUnknownToolsetName guards against a POLYMARKET_TOOLSETS
+// typo silently producing a server with zero tools and no diagnostic:
+// cfg.ToolsetEnabled simply never matches an unrecognized name, so every
+// toolset would otherwise register nothing without any error at all.
+func TestAssembleRejectsUnknownToolsetName(t *testing.T) {
+	cfg := &config.Config{
+		BaseURL:  config.DefaultBaseURL,
+		Toolsets: []string{"makets"}, // typo of "markets"
+	}
+
+	_, _, err := Assemble(cfg, "test")
+	if err == nil {
+		t.Fatal("Assemble() expected error for an unknown toolset name, got nil")
+	}
+}
+
 func TestAssembleInvalidBaseURL(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://exa\nmple.com"}
 
 	if _, _, err := Assemble(cfg, "test"); err == nil {
 		t.Fatal("Assemble() expected error for invalid BaseURL, got nil")
+	}
+}
+
+func TestAssembleInvalidCLOBBaseURL(t *testing.T) {
+	cfg := &config.Config{
+		BaseURL:     config.DefaultBaseURL,
+		CLOBBaseURL: "http://exa\nmple.com",
+		ChainID:     config.DefaultChainID,
+		PrivateKey:  testPrivateKey,
+	}
+
+	if _, _, err := Assemble(cfg, "test"); err == nil {
+		t.Fatal("Assemble() expected error for invalid CLOBBaseURL, got nil")
 	}
 }
 

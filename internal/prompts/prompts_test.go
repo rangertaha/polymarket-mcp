@@ -68,3 +68,27 @@ func TestMarketOddsPromptText(t *testing.T) {
 		t.Errorf("rendered prompt = %q, want it to reference the markets_get tool", text.Text)
 	}
 }
+
+// TestMarketOddsPromptRequiresID guards against silently rendering a broken
+// prompt (an empty market ID interpolated into the instructions) when the
+// required "id" argument is omitted.
+func TestMarketOddsPromptRequiresID(t *testing.T) {
+	s := server.New("test", "0.0.0", false)
+	Register(s)
+
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	if _, err := s.Connect(ctx, serverTransport); err != nil {
+		t.Fatalf("Server.Connect() error = %v", err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client.Connect() error = %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	if _, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: "market_odds"}); err == nil {
+		t.Fatal("GetPrompt() expected error for missing required \"id\" argument, got nil")
+	}
+}

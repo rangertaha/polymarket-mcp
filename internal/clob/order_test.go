@@ -30,6 +30,27 @@ func TestNewWalletInvalidKey(t *testing.T) {
 	}
 }
 
+// TestNewWalletAcceptsEitherHexPrefixCase guards against a case-sensitive
+// prefix strip: crypto.HexToECDSA rejects both "0x" and "0X", so both must
+// be stripped, not just the lowercase form.
+func TestNewWalletAcceptsEitherHexPrefixCase(t *testing.T) {
+	want := mustTestWallet(t).Address
+
+	for _, prefixed := range []string{
+		"0x" + testPrivateKeyHex,
+		"0X" + testPrivateKeyHex,
+		testPrivateKeyHex,
+	} {
+		w, err := NewWallet(prefixed)
+		if err != nil {
+			t.Fatalf("NewWallet(%q) error = %v", prefixed, err)
+		}
+		if w.Address != want {
+			t.Errorf("NewWallet(%q).Address = %s, want %s", prefixed, w.Address.Hex(), want.Hex())
+		}
+	}
+}
+
 // TestBuildAndSignRecoversSignerAddress independently recomputes the EIP-712
 // digest for the order BuildAndSign produced (duplicating the domain/message
 // construction rather than calling internal helpers) and verifies the
@@ -117,6 +138,7 @@ func TestBuildAndSignValidatesInput(t *testing.T) {
 		{"price too high", OrderArgs{TokenID: "1", Price: 1, Size: 1, Side: Buy}},
 		{"zero size", OrderArgs{TokenID: "1", Price: 0.5, Size: 0, Side: Buy}},
 		{"non-numeric tokenId", OrderArgs{TokenID: "not-a-number", Price: 0.5, Size: 1, Side: Buy}},
+		{"negative tokenId", OrderArgs{TokenID: "-5", Price: 0.5, Size: 1, Side: Buy}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

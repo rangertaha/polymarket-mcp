@@ -5,6 +5,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -156,6 +158,19 @@ func containsRawBoolean(t *testing.T, raw json.RawMessage) bool {
 	return walk(node)
 }
 
+// unsupportedSchemaType has a field kind jsonschema.ForType cannot represent,
+// so normalizedSchema must fall back to nil (letting the SDK's own
+// generation run) instead of panicking or emitting a broken schema.
+type unsupportedSchemaType struct {
+	C chan int `json:"c"`
+}
+
+func TestNormalizedSchemaFallsBackOnUnsupportedType(t *testing.T) {
+	if got := normalizedSchema(reflect.TypeFor[unsupportedSchemaType]()); got != nil {
+		t.Errorf("normalizedSchema() = %s, want nil for an unsupported field type", got)
+	}
+}
+
 func TestListResult(t *testing.T) {
 	got := List([]int{1, 2, 3})
 	if got.Count != 3 {
@@ -208,6 +223,39 @@ func TestAddPromptRendersArgs(t *testing.T) {
 	}
 	if text.Text != "Hello, Ada!" {
 		t.Errorf("rendered text = %q, want %q", text.Text, "Hello, Ada!")
+	}
+}
+
+// TestAddPromptRejectsMissingRequiredArg guards against a required prompt
+// argument being silently omitted: the MCP SDK declares
+// PromptArgument.Required for clients' benefit but never enforces it, so
+// AddPrompt's own handler must reject the call rather than rendering with an
+// empty/missing value.
+func TestAddPromptRejectsMissingRequiredArg(t *testing.T) {
+	s := New("test", "0.0.0", false)
+	s.AddPrompt("greet", "Greets someone", []PromptArg{
+		{Name: "name", Description: "who to greet", Required: true},
+	}, func(args map[string]string) string {
+		return "Hello, " + args["name"] + "!"
+	})
+
+	session := connectClient(t, s)
+	if _, err := session.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "greet"}); err == nil {
+		t.Fatal("GetPrompt() expected error for missing required argument, got nil")
+	}
+}
+
+// TestRunReturnsOnContextCancel drives Run with an already-canceled context,
+// so it returns promptly instead of blocking for the life of the connection.
+func TestRunReturnsOnContextCancel(t *testing.T) {
+	s := New("test", "0.0.0", false)
+	serverTransport, _ := mcp.NewInMemoryTransports()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := s.Run(ctx, serverTransport); !errors.Is(err, context.Canceled) {
+		t.Errorf("Run() error = %v, want context.Canceled", err)
 	}
 }
 
